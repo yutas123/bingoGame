@@ -39,6 +39,23 @@
       </div>
     </div>
     
+    <!-- 追加: アクションボタン -->
+    <div class="action-buttons">
+      <button 
+        @click="showResults = true" 
+        class="action-btn result-btn"
+        v-if="selectedSongs.length > 0"
+      >
+        結果を見る
+      </button>
+      <button 
+        @click="showAchievements = true" 
+        class="action-btn achievements-btn"
+      >
+        実績を確認
+      </button>
+    </div>
+
     <div class="share-section">
       <button @click="generateShareImage">画像を生成して共有</button>
       <div class="share-result" v-if="shareImageUrl">
@@ -49,20 +66,48 @@
         </div>
       </div>
     </div>
+    
+    <!-- 追加: モーダル - 結果表示 -->
+    <div class="modal-overlay" v-if="showResults" @click="closeModals">
+      <div class="modal-content" @click.stop>
+        <button class="modal-close" @click="closeModals">×</button>
+        <ShareResult 
+          :selectedSongs="selectedSongs" 
+          :vocaloidSongs="vocaloidSongs" 
+        />
+      </div>
+    </div>
+    
+    <!-- 追加: モーダル - 実績表示 -->
+    <div class="modal-overlay" v-if="showAchievements" @click="closeModals">
+      <div class="modal-content" @click.stop>
+        <button class="modal-close" @click="closeModals">×</button>
+        <AchievementDisplay :achievements="achievements" />
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import html2canvas from 'html2canvas';
-import { VocaloidSong } from '../types';
+import type { VocaloidSong } from '../type';
 import { vocaloidSongs } from '../data/songs';
+// 追加: コンポーネントのインポート
+import ShareResult from './ShareResult.vue';
+import AchievementDisplay from './AchievementDisplay.vue';
+import { calculateAchievements } from '../utils/achievements';
 
 // 状態管理
 const selectedSongs = ref<number[]>([]);
 const currentFilter = ref('all');
 const shareImageUrl = ref('');
 const gridSize = ref(10); // 10x10 グリッド
+
+// 追加: 新しい状態変数
+const showResults = ref(false);
+const showAchievements = ref(false);
+const achievements = ref(calculateAchievements(selectedSongs.value, vocaloidSongs));
 
 // 曲のフィルタリング
 const filteredSongs = computed(() => {
@@ -145,12 +190,32 @@ const downloadImage = () => {
   document.body.removeChild(a);
 };
 
+// 追加: モーダルを閉じる関数
+const closeModals = () => {
+  showResults.value = false;
+  showAchievements.value = false;
+};
+
+// 追加: 選択曲が変更されたら実績を再計算するウォッチャー
+watch(selectedSongs, () => {
+  achievements.value = calculateAchievements(selectedSongs.value, vocaloidSongs);
+  // ローカルストレージに保存
+  localStorage.setItem('vocaloidBingoSelected', JSON.stringify(selectedSongs.value));
+});
+
 // ページロード時に保存データ読み込み
 onMounted(() => {
   const saved = localStorage.getItem('vocaloidBingoSelected');
   if (saved) {
     selectedSongs.value = JSON.parse(saved);
   }
+  
+  // 追加: ESCキーでモーダルを閉じる
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeModals();
+    }
+  });
 });
 </script>
 
@@ -289,6 +354,81 @@ onMounted(() => {
   gap: 15px;
 }
 
+/* 追加: 新しいスタイル */
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin: 30px 0;
+}
+
+.action-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.result-btn {
+  background-color: #5d4dff;
+  color: white;
+}
+
+.achievements-btn {
+  background-color: #ffcc5d;
+  color: #333;
+}
+
+.action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.modal-content {
+  background-color: white;
+  border-radius: 12px;
+  padding: 20px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+}
+
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background-color: #f0f0f0;
+}
+
 @media (max-width: 768px) {
   .grid-10 {
     grid-template-columns: repeat(5, 1fr);
@@ -297,7 +437,10 @@ onMounted(() => {
   .bingo-cell {
     font-size: 0.7rem;
   }
+  
+  .modal-content {
+    width: 95%;
+    padding: 15px;
+  }
 }
 </style>
-
-

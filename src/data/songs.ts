@@ -1,5 +1,5 @@
 // src/data/songs.ts
-// import { VocaloidSong } from '../types';
+import type { VocaloidSong } from '../type';
 
 export const vocaloidSongs: VocaloidSong[] = [
   // 黎明期 (2007-2009) - 20曲
