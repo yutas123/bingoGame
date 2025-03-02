@@ -38,19 +38,51 @@
           </div>
         </div>
         
-        <!-- シンプルなカード表示 -->
-        <div class="simple-card" v-if="currentSongIndex < diagnosisSongs.length">
-          <div class="song-card">
-            <div class="song-thumbnail">
-              <img src="https://placehold.jp/200x200.png" alt="曲のサムネイル" />
-            </div>
-            <div class="song-info">
-              <h2 class="song-title">{{ diagnosisSongs[currentSongIndex].title }}</h2>
-              <p class="song-producer">{{ diagnosisSongs[currentSongIndex].producer }}</p>
-              <p class="song-vocalist">{{ diagnosisSongs[currentSongIndex].vocalist }}</p>
-              <p class="song-year">{{ diagnosisSongs[currentSongIndex].year }}年</p>
-            </div>
-          </div>
+        <!-- Tinderスタイルのカードスワイプ -->
+        <div class="tinder-cards">
+          <swiper
+            :modules="[EffectCards]"
+            :effect="'cards'"
+            :grab-cursor="true"
+            class="card-swiper"
+            @swiper="onSwiperInit"
+            @slideChange="onSlideChange"
+            @slideNextTransitionStart="onSlideNextStart"
+            @slidePrevTransitionStart="onSlidePrevStart"
+            :cards-effect="{
+              slideShadows: true,
+              rotate: true,
+              perSlideRotate: 4,
+              perSlideOffset: 8,
+            }"
+            ref="swiperRef"
+          >
+            <swiper-slide v-for="(song, index) in diagnosisSongs" :key="song.id" class="swiper-card">
+              <div class="song-card">
+                <div class="swipe-overlay left-overlay">
+                  <div class="overlay-content">
+                    <span class="overlay-icon">👎</span>
+                    <span class="overlay-text">知らない</span>
+                  </div>
+                </div>
+                <div class="swipe-overlay right-overlay">
+                  <div class="overlay-content">
+                    <span class="overlay-icon">👍</span>
+                    <span class="overlay-text">知ってる</span>
+                  </div>
+                </div>
+                <div class="song-thumbnail">
+                  <img src="https://placehold.jp/200x200.png" alt="曲のサムネイル" />
+                </div>
+                <div class="song-info">
+                  <h2 class="song-title">{{ song.title }}</h2>
+                  <p class="song-producer">{{ song.producer }}</p>
+                  <p class="song-vocalist">{{ song.vocalist }}</p>
+                  <p class="song-year">{{ song.year }}年</p>
+                </div>
+              </div>
+            </swiper-slide>
+          </swiper>
         </div>
         
         <!-- 知ってる！エフェクト -->
@@ -86,10 +118,10 @@
       </div>
       
       <div class="manual-buttons">
-        <button type="button" @click="() => { console.log('知らない！ボタンクリック'); rejectCard(); }" class="dont-know-btn" style="padding: 20px 40px; font-size: 1.3rem; cursor: pointer; z-index: 100;">
+        <button type="button" @click="rejectCard" class="dont-know-btn">
           <span class="btn-icon">👎</span> 知らない！
         </button>
-        <button type="button" @click="() => { console.log('知ってる！ボタンクリック'); acceptCard(); }" class="know-btn" style="padding: 20px 40px; font-size: 1.3rem; cursor: pointer; z-index: 100;">
+        <button type="button" @click="acceptCard" class="know-btn">
           <span class="btn-icon">👍</span> 知ってる！
         </button>
       </div>
@@ -569,82 +601,88 @@ const onSlidePrevStart = () => {
 // 手動で「知らない！」を選択
 const rejectCard = () => {
   console.log('知らない！ボタンクリック');
-  console.log('diagnosisSongs:', diagnosisSongs.value);
-  console.log('currentSongIndex:', currentSongIndex.value);
   
-  if (currentSongIndex.value < diagnosisSongs.value.length) {
-    const currentSong = diagnosisSongs.value[currentSongIndex.value];
-    console.log('知らない！処理開始', currentSong.title);
-    
-    // 回答を記録
-    answeredSongs.value.push(currentSong.id);
-    console.log('answeredSongs:', answeredSongs.value);
-    
-    // 次の曲へ
-    const oldIndex = currentSongIndex.value;
-    currentSongIndex.value++;
-    console.log('インデックス更新:', oldIndex, '->', currentSongIndex.value);
-    
-    // プログレスバーを更新
-    const progressPercent = (answeredSongs.value.length / totalQuestions) * 100;
-    console.log(`進行状況: ${answeredSongs.value.length}/${totalQuestions} (${progressPercent}%)`);
-    
-    // 次の曲があるか確認
-    if (currentSongIndex.value < diagnosisSongs.value.length) {
-      console.log('次の曲:', diagnosisSongs.value[currentSongIndex.value].title);
-    } else {
-      console.log('次の曲はありません');
-    }
-    
-    // 全ての曲に回答したら結果画面へ
-    if (currentSongIndex.value >= diagnosisSongs.value.length || answeredSongs.value.length >= totalQuestions) {
-      console.log('全ての曲に回答しました。結果画面へ移行します。');
-      currentStep.value = 'result';
-    }
+  if (swiperInstance.value) {
+    // Swiperを左にスライド（知らない）
+    swiperInstance.value.slidePrev();
   } else {
-    console.error('知らない！処理失敗: currentSongIndex が範囲外です', currentSongIndex.value, diagnosisSongs.value.length);
+    console.log('Swiperインスタンスが初期化されていません');
+    
+    if (currentSongIndex.value < diagnosisSongs.value.length) {
+      const currentSong = diagnosisSongs.value[currentSongIndex.value];
+      console.log('知らない！処理開始', currentSong.title);
+      
+      // 回答を記録
+      answeredSongs.value.push(currentSong.id);
+      console.log('answeredSongs:', answeredSongs.value);
+      
+      // エフェクト表示
+      displayDontKnowEffect(currentSong);
+      
+      // 次の曲へ
+      const oldIndex = currentSongIndex.value;
+      currentSongIndex.value++;
+      console.log('インデックス更新:', oldIndex, '->', currentSongIndex.value);
+      
+      // プログレスバーを更新
+      const progressPercent = (answeredSongs.value.length / totalQuestions) * 100;
+      console.log(`進行状況: ${answeredSongs.value.length}/${totalQuestions} (${progressPercent}%)`);
+      
+      // 全ての曲に回答したら結果画面へ
+      if (currentSongIndex.value >= diagnosisSongs.value.length || answeredSongs.value.length >= totalQuestions) {
+        console.log('全ての曲に回答しました。結果画面へ移行します。');
+        setTimeout(() => {
+          currentStep.value = 'result';
+        }, 1500);
+      }
+    } else {
+      console.error('知らない！処理失敗: currentSongIndex が範囲外です', currentSongIndex.value, diagnosisSongs.value.length);
+    }
   }
 };
 
 // 手動で「知ってる！」を選択
 const acceptCard = () => {
   console.log('知ってる！ボタンクリック');
-  console.log('diagnosisSongs:', diagnosisSongs.value);
-  console.log('currentSongIndex:', currentSongIndex.value);
   
-  if (currentSongIndex.value < diagnosisSongs.value.length) {
-    const currentSong = diagnosisSongs.value[currentSongIndex.value];
-    console.log('知ってる！処理開始', currentSong.title);
-    
-    // 回答を記録
-    answeredSongs.value.push(currentSong.id);
-    knownSongs.value.push(currentSong.id);
-    console.log('answeredSongs:', answeredSongs.value);
-    console.log('knownSongs:', knownSongs.value);
-    
-    // 次の曲へ
-    const oldIndex = currentSongIndex.value;
-    currentSongIndex.value++;
-    console.log('インデックス更新:', oldIndex, '->', currentSongIndex.value);
-    
-    // プログレスバーを更新
-    const progressPercent = (answeredSongs.value.length / totalQuestions) * 100;
-    console.log(`進行状況: ${answeredSongs.value.length}/${totalQuestions} (${progressPercent}%)`);
-    
-    // 次の曲があるか確認
-    if (currentSongIndex.value < diagnosisSongs.value.length) {
-      console.log('次の曲:', diagnosisSongs.value[currentSongIndex.value].title);
-    } else {
-      console.log('次の曲はありません');
-    }
-    
-    // 全ての曲に回答したら結果画面へ
-    if (currentSongIndex.value >= diagnosisSongs.value.length || answeredSongs.value.length >= totalQuestions) {
-      console.log('全ての曲に回答しました。結果画面へ移行します。');
-      currentStep.value = 'result';
-    }
+  if (swiperInstance.value) {
+    // Swiperを右にスライド（知ってる）
+    swiperInstance.value.slideNext();
   } else {
-    console.error('知ってる！処理失敗: currentSongIndex が範囲外です', currentSongIndex.value, diagnosisSongs.value.length);
+    console.log('Swiperインスタンスが初期化されていません');
+    
+    if (currentSongIndex.value < diagnosisSongs.value.length) {
+      const currentSong = diagnosisSongs.value[currentSongIndex.value];
+      console.log('知ってる！処理開始', currentSong.title);
+      
+      // 回答を記録
+      answeredSongs.value.push(currentSong.id);
+      knownSongs.value.push(currentSong.id);
+      console.log('answeredSongs:', answeredSongs.value);
+      console.log('knownSongs:', knownSongs.value);
+      
+      // エフェクト表示
+      displayKnowEffect(currentSong);
+      
+      // 次の曲へ
+      const oldIndex = currentSongIndex.value;
+      currentSongIndex.value++;
+      console.log('インデックス更新:', oldIndex, '->', currentSongIndex.value);
+      
+      // プログレスバーを更新
+      const progressPercent = (answeredSongs.value.length / totalQuestions) * 100;
+      console.log(`進行状況: ${answeredSongs.value.length}/${totalQuestions} (${progressPercent}%)`);
+      
+      // 全ての曲に回答したら結果画面へ
+      if (currentSongIndex.value >= diagnosisSongs.value.length || answeredSongs.value.length >= totalQuestions) {
+        console.log('全ての曲に回答しました。結果画面へ移行します。');
+        setTimeout(() => {
+          currentStep.value = 'result';
+        }, 1500);
+      }
+    } else {
+      console.error('知ってる！処理失敗: currentSongIndex が範囲外です', currentSongIndex.value, diagnosisSongs.value.length);
+    }
   }
 };
 
@@ -1057,6 +1095,7 @@ onMounted(() => {
   background-color: white;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
   overflow: hidden;
+  position: relative;
 }
 
 :deep(.swiper-slide-shadow-left),
@@ -1066,6 +1105,67 @@ onMounted(() => {
 
 :deep(.swiper-cards) {
   overflow: visible;
+}
+
+/* スワイプオーバーレイ */
+.swipe-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.left-overlay {
+  background: linear-gradient(to right, rgba(255, 0, 0, 0.2), transparent);
+  justify-content: flex-start;
+  padding-left: 30px;
+}
+
+.right-overlay {
+  background: linear-gradient(to left, rgba(0, 255, 0, 0.2), transparent);
+  justify-content: flex-end;
+  padding-right: 30px;
+}
+
+.overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: rgba(255, 255, 255, 0.8);
+  padding: 15px;
+  border-radius: 50%;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.overlay-icon {
+  font-size: 2rem;
+}
+
+.overlay-text {
+  font-size: 1rem;
+  font-weight: bold;
+  margin-top: 5px;
+}
+
+/* スワイプ中のオーバーレイ表示 */
+:deep(.swiper-slide-prev) .left-overlay,
+:deep(.swiper-slide-next) .right-overlay {
+  opacity: 1;
+}
+
+/* Tinderカードコンテナ */
+.tinder-cards {
+  width: 100%;
+  height: 400px;
+  position: relative;
 }
 .card-container {
   position: relative;
@@ -1109,8 +1209,34 @@ onMounted(() => {
   margin-bottom: 30px;
 }
 
+.manual-buttons .know-btn, 
+.manual-buttons .dont-know-btn {
+  padding: 20px 40px;
+  font-size: 1.3rem;
+  cursor: pointer;
+  z-index: 100;
+  transition: all 0.3s;
+}
+
+.manual-buttons .know-btn:hover, 
+.manual-buttons .dont-know-btn:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+.manual-buttons .know-btn {
+  background-color: #ff6b9d;
+  color: white;
+}
+
+.manual-buttons .dont-know-btn {
+  background-color: #f0f0f0;
+  color: #666;
+}
+
 .btn-icon {
   margin-right: 5px;
+  font-size: 1.5rem;
 }
 
 /* エフェクト */
