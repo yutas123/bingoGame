@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import VocaloidBingo from './components/VocaloidBingo.vue';
+import VocaloidDiagnosis from './components/VocaloidDiagnosis.vue';
 </script>
 
 <template>
-  <VocaloidBingo />
+  <VocaloidDiagnosis />
 </template>
 
 <style scoped>
