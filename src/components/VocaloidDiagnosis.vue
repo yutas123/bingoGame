@@ -26,20 +26,72 @@
         <div class="progress-text">{{ answeredCount }}/{{ totalQuestions }}曲</div>
       </div>
       
-      <div class="song-card">
-        <div class="song-thumbnail">
-          <img src="https://placehold.jp/200x200.png" alt="曲のサムネイル" />
+      <div class="card-container">
+        <div class="swipe-indicators">
+          <div class="swipe-left">
+            <span class="indicator-icon">👎</span>
+            <span class="indicator-text">知らない</span>
+          </div>
+          <div class="swipe-right">
+            <span class="indicator-text">知ってる</span>
+            <span class="indicator-icon">👍</span>
+          </div>
         </div>
-        <div class="song-info">
-          <h2 class="song-title">{{ currentSong.title }}</h2>
-          <p class="song-producer">{{ currentSong.producer }}</p>
-          <p class="song-vocalist">{{ currentSong.vocalist }}</p>
+        
+        <!-- シンプルなカード表示 -->
+        <div class="simple-card" v-if="currentSongIndex < diagnosisSongs.length">
+          <div class="song-card">
+            <div class="song-thumbnail">
+              <img src="https://placehold.jp/200x200.png" alt="曲のサムネイル" />
+            </div>
+            <div class="song-info">
+              <h2 class="song-title">{{ diagnosisSongs[currentSongIndex].title }}</h2>
+              <p class="song-producer">{{ diagnosisSongs[currentSongIndex].producer }}</p>
+              <p class="song-vocalist">{{ diagnosisSongs[currentSongIndex].vocalist }}</p>
+              <p class="song-year">{{ diagnosisSongs[currentSongIndex].year }}年</p>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 知ってる！エフェクト -->
+        <div v-if="showKnowEffect" class="know-effect animate__animated animate__bounceIn">
+          <div class="effect-content">
+            <div class="effect-stamp">知ってる！</div>
+            <div class="effect-comment">{{ currentKnowComment }}</div>
+          </div>
+        </div>
+        
+        <!-- 知らない！エフェクト -->
+        <div v-if="showDontKnowEffect" class="dont-know-effect animate__animated animate__fadeIn">
+          <div class="effect-content">
+            <div class="effect-trivia">
+              <h3>豆知識</h3>
+              <p>{{ currentTrivia }}</p>
+            </div>
+            <div class="effect-action">
+              <button @click="addToCheckList" class="add-to-checklist-btn">
+                <span class="icon">📝</span> チェックリストに追加
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- レア曲発見エフェクト -->
+        <div v-if="showRareEffect" class="rare-effect animate__animated animate__zoomIn">
+          <div class="rare-content">
+            <div class="rare-title">レア曲発見！</div>
+            <div class="rare-message">これを知ってたらガチ勢！</div>
+          </div>
         </div>
       </div>
       
-      <div class="answer-buttons">
-        <button @click="answerSong(true)" class="know-btn">知ってる！</button>
-        <button @click="answerSong(false)" class="dont-know-btn">知らない！</button>
+      <div class="manual-buttons">
+        <button type="button" @click="() => { console.log('知らない！ボタンクリック'); rejectCard(); }" class="dont-know-btn" style="padding: 20px 40px; font-size: 1.3rem; cursor: pointer; z-index: 100;">
+          <span class="btn-icon">👎</span> 知らない！
+        </button>
+        <button type="button" @click="() => { console.log('知ってる！ボタンクリック'); acceptCard(); }" class="know-btn" style="padding: 20px 40px; font-size: 1.3rem; cursor: pointer; z-index: 100;">
+          <span class="btn-icon">👍</span> 知ってる！
+        </button>
       </div>
     </div>
     
@@ -107,10 +159,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import html2canvas from 'html2canvas';
 import type { VocaloidSong } from '../type';
 import { vocaloidSongs } from '../data/songs';
+import { Swiper, SwiperSlide } from 'swiper/vue';
+import { EffectCards } from 'swiper/modules';
+import 'swiper/css';
+import 'swiper/css/effect-cards';
+import 'animate.css';
 
 // 状態管理
 const currentStep = ref<'start' | 'diagnosis' | 'result'>('start');
@@ -119,7 +176,81 @@ const answeredSongs = ref<number[]>([]);
 const knownSongs = ref<number[]>([]);
 const currentSongIndex = ref(0);
 const shareImageUrl = ref('');
-const totalQuestions = 50; // 診断で使用する曲数
+const totalQuestions = 5; // 診断で使用する曲数（テスト用に少なくしています）
+
+// Swiper関連の状態
+const swiperRef = ref<any>(null);
+const swiperInstance = ref<any>(null);
+const remainingSongs = ref<VocaloidSong[]>([]);
+const checkList = ref<VocaloidSong[]>([]);
+const currentSongForSwipe = ref<VocaloidSong | null>(null);
+
+// エフェクト関連の状態
+const showKnowEffect = ref(false);
+const showDontKnowEffect = ref(false);
+const showRareEffect = ref(false);
+const currentKnowComment = ref('');
+const currentTrivia = ref('');
+const currentSongForEffect = ref<VocaloidSong | null>(null);
+
+// 効果音
+const knowSound = ref(null as HTMLAudioElement | null);
+const dontKnowSound = ref(null as HTMLAudioElement | null);
+
+// 効果音の初期化
+const initSounds = () => {
+  try {
+    knowSound.value = new Audio('/sounds/know.mp3');
+    dontKnowSound.value = new Audio('/sounds/dont-know.mp3');
+  } catch (e) {
+    console.error('効果音の初期化に失敗しました', e);
+  }
+};
+
+// 知ってる！コメントのリスト
+const knowComments = [
+  'さすが！これを知ってるとはガチ勢！',
+  'この曲、いいですよね！',
+  'あなたはボカロ通！',
+  'この曲を知ってるなんて素敵！',
+  'ボカロマスターの証！',
+  'センスいいですね！',
+  'この曲、名曲ですよね！'
+];
+
+// 豆知識のリスト
+const triviaList = {
+  dawn: [
+    '初音ミクが発売されたのは2007年8月31日です！',
+    'ボカロ黎明期の曲は、今でも根強い人気があります。',
+    'この時代はニコニコ動画の全盛期でもありました。'
+  ],
+  firstBoom: [
+    'この時代はボカロPの数が急増した時期です。',
+    'ボーカロイドがテレビCMに使われ始めたのもこの頃！',
+    'この時代の曲は、今でも多くのライブで演奏されています。'
+  ],
+  golden: [
+    'この時代はボカロ曲のCD販売が最も盛んでした。',
+    'ボカロ曲がアニメのテーマソングに採用されることも増えました。',
+    'ボカロPの中からメジャーデビューする人も出てきた時代です。'
+  ],
+  mature: [
+    'この時代はボカロの表現の幅が広がった時期です。',
+    'ボカロ曲のMVのクオリティが飛躍的に向上しました。',
+    'ストリーミングサービスの普及でボカロの聴き方も変わりました。'
+  ],
+  modern: [
+    'TikTokなどのSNSでボカロ曲が再評価される時代です。',
+    '新世代のボカロPが次々と登場しています。',
+    'ボカロ文化は今や世界中に広がっています！'
+  ]
+};
+
+// レア曲判定（人気度が低い曲をレア曲とする）
+const isRareSong = (song: VocaloidSong): boolean => {
+  return song.popularity <= 7;
+};
 
 // 診断に使用する曲をランダムに選択
 const diagnosisSongs = ref<VocaloidSong[]>([]);
@@ -240,17 +371,27 @@ const resultType = computed(() => {
 
 // 診断開始
 const startDiagnosis = () => {
+  console.log('診断開始');
+  
   // 診断用の曲をランダムに選択
   const shuffled = [...vocaloidSongs].sort(() => 0.5 - Math.random());
   diagnosisSongs.value = shuffled.slice(0, totalQuestions);
+  console.log('選択された曲:', diagnosisSongs.value);
   
   // 状態のリセット
   currentSongIndex.value = 0;
   answeredSongs.value = [];
   knownSongs.value = [];
+  remainingSongs.value = [...diagnosisSongs.value];
   
   // 診断画面に移行
   currentStep.value = 'diagnosis';
+  console.log('現在のステップ:', currentStep.value);
+  console.log('現在の曲インデックス:', currentSongIndex.value);
+  console.log('現在の曲:', diagnosisSongs.value[currentSongIndex.value]);
+  
+  // 効果音の初期化
+  initSounds();
 };
 
 // 曲への回答
@@ -306,9 +447,220 @@ const downloadImage = () => {
   document.body.removeChild(a);
 };
 
+// Swiperカードの初期化
+const initTinderCards = () => {
+  remainingSongs.value = [...diagnosisSongs.value];
+};
+
+// 「知ってる！」エフェクトの表示
+const displayKnowEffect = (song: VocaloidSong) => {
+  console.log('知ってる！エフェクト表示', song.title);
+  
+  // ランダムなコメントを選択
+  currentKnowComment.value = knowComments[Math.floor(Math.random() * knowComments.length)];
+  currentSongForEffect.value = song;
+  
+  // 効果音を再生
+  if (knowSound.value) {
+    knowSound.value.currentTime = 0;
+    knowSound.value.play().catch(e => console.error('効果音の再生に失敗しました', e));
+  }
+  
+  // エフェクトを表示
+  showKnowEffect.value = true;
+  console.log('showKnowEffect:', showKnowEffect.value);
+  
+  // レア曲判定
+  if (isRareSong(song)) {
+    setTimeout(() => {
+      showRareEffect.value = true;
+      console.log('showRareEffect:', showRareEffect.value);
+      setTimeout(() => {
+        showRareEffect.value = false;
+      }, 2000);
+    }, 500);
+  }
+  
+  // エフェクトを一定時間後に非表示
+  setTimeout(() => {
+    showKnowEffect.value = false;
+  }, 1500);
+};
+
+// 「知らない！」エフェクトの表示
+const displayDontKnowEffect = (song: VocaloidSong) => {
+  console.log('知らない！エフェクト表示', song.title);
+  
+  // 時代に応じた豆知識を選択
+  const trivias = triviaList[song.era];
+  currentTrivia.value = trivias[Math.floor(Math.random() * trivias.length)];
+  currentSongForEffect.value = song;
+  
+  // 効果音を再生
+  if (dontKnowSound.value) {
+    dontKnowSound.value.currentTime = 0;
+    dontKnowSound.value.play().catch(e => console.error('効果音の再生に失敗しました', e));
+  }
+  
+  // エフェクトを表示
+  showDontKnowEffect.value = true;
+  console.log('showDontKnowEffect:', showDontKnowEffect.value);
+  
+  // エフェクトを一定時間後に非表示
+  setTimeout(() => {
+    showDontKnowEffect.value = false;
+  }, 3000);
+};
+
+// チェックリストに追加
+const addToCheckList = () => {
+  if (currentSongForEffect.value && !checkList.value.some(s => s.id === currentSongForEffect.value?.id)) {
+    checkList.value.push(currentSongForEffect.value);
+  }
+  
+  // エフェクトを非表示
+  showDontKnowEffect.value = false;
+};
+
+// Swiperイベントハンドラ
+const onSwiperInit = (swiper: any) => {
+  swiperInstance.value = swiper;
+  currentSongForSwipe.value = remainingSongs.value[0] || null;
+};
+
+const onSlideChange = (swiper: any) => {
+  const index = swiper.activeIndex;
+  if (index < remainingSongs.value.length) {
+    currentSongForSwipe.value = remainingSongs.value[index];
+  }
+};
+
+const onSlideNextStart = () => {
+  // 右スワイプ（知ってる）
+  if (currentSongForSwipe.value) {
+    answeredSongs.value.push(currentSongForSwipe.value.id);
+    knownSongs.value.push(currentSongForSwipe.value.id);
+    displayKnowEffect(currentSongForSwipe.value);
+    
+    // 全ての曲に回答したら結果画面へ
+    if (answeredSongs.value.length >= totalQuestions) {
+      setTimeout(() => {
+        currentStep.value = 'result';
+      }, 1500);
+    }
+  }
+};
+
+const onSlidePrevStart = () => {
+  // 左スワイプ（知らない）
+  if (currentSongForSwipe.value) {
+    answeredSongs.value.push(currentSongForSwipe.value.id);
+    displayDontKnowEffect(currentSongForSwipe.value);
+    
+    // 全ての曲に回答したら結果画面へ
+    if (answeredSongs.value.length >= totalQuestions) {
+      setTimeout(() => {
+        currentStep.value = 'result';
+      }, 1500);
+    }
+  }
+};
+
+// 手動で「知らない！」を選択
+const rejectCard = () => {
+  console.log('知らない！ボタンクリック');
+  console.log('diagnosisSongs:', diagnosisSongs.value);
+  console.log('currentSongIndex:', currentSongIndex.value);
+  
+  if (currentSongIndex.value < diagnosisSongs.value.length) {
+    const currentSong = diagnosisSongs.value[currentSongIndex.value];
+    console.log('知らない！処理開始', currentSong.title);
+    
+    // 回答を記録
+    answeredSongs.value.push(currentSong.id);
+    console.log('answeredSongs:', answeredSongs.value);
+    
+    // 次の曲へ
+    const oldIndex = currentSongIndex.value;
+    currentSongIndex.value++;
+    console.log('インデックス更新:', oldIndex, '->', currentSongIndex.value);
+    
+    // プログレスバーを更新
+    const progressPercent = (answeredSongs.value.length / totalQuestions) * 100;
+    console.log(`進行状況: ${answeredSongs.value.length}/${totalQuestions} (${progressPercent}%)`);
+    
+    // 次の曲があるか確認
+    if (currentSongIndex.value < diagnosisSongs.value.length) {
+      console.log('次の曲:', diagnosisSongs.value[currentSongIndex.value].title);
+    } else {
+      console.log('次の曲はありません');
+    }
+    
+    // 全ての曲に回答したら結果画面へ
+    if (currentSongIndex.value >= diagnosisSongs.value.length || answeredSongs.value.length >= totalQuestions) {
+      console.log('全ての曲に回答しました。結果画面へ移行します。');
+      currentStep.value = 'result';
+    }
+  } else {
+    console.error('知らない！処理失敗: currentSongIndex が範囲外です', currentSongIndex.value, diagnosisSongs.value.length);
+  }
+};
+
+// 手動で「知ってる！」を選択
+const acceptCard = () => {
+  console.log('知ってる！ボタンクリック');
+  console.log('diagnosisSongs:', diagnosisSongs.value);
+  console.log('currentSongIndex:', currentSongIndex.value);
+  
+  if (currentSongIndex.value < diagnosisSongs.value.length) {
+    const currentSong = diagnosisSongs.value[currentSongIndex.value];
+    console.log('知ってる！処理開始', currentSong.title);
+    
+    // 回答を記録
+    answeredSongs.value.push(currentSong.id);
+    knownSongs.value.push(currentSong.id);
+    console.log('answeredSongs:', answeredSongs.value);
+    console.log('knownSongs:', knownSongs.value);
+    
+    // 次の曲へ
+    const oldIndex = currentSongIndex.value;
+    currentSongIndex.value++;
+    console.log('インデックス更新:', oldIndex, '->', currentSongIndex.value);
+    
+    // プログレスバーを更新
+    const progressPercent = (answeredSongs.value.length / totalQuestions) * 100;
+    console.log(`進行状況: ${answeredSongs.value.length}/${totalQuestions} (${progressPercent}%)`);
+    
+    // 次の曲があるか確認
+    if (currentSongIndex.value < diagnosisSongs.value.length) {
+      console.log('次の曲:', diagnosisSongs.value[currentSongIndex.value].title);
+    } else {
+      console.log('次の曲はありません');
+    }
+    
+    // 全ての曲に回答したら結果画面へ
+    if (currentSongIndex.value >= diagnosisSongs.value.length || answeredSongs.value.length >= totalQuestions) {
+      console.log('全ての曲に回答しました。結果画面へ移行します。');
+      currentStep.value = 'result';
+    }
+  } else {
+    console.error('知ってる！処理失敗: currentSongIndex が範囲外です', currentSongIndex.value, diagnosisSongs.value.length);
+  }
+};
+
+// 診断開始時にTinderカードを初期化
+watch(() => currentStep.value, (newValue) => {
+  if (newValue === 'diagnosis') {
+    nextTick(() => {
+      initTinderCards();
+    });
+  }
+});
+
 // ページロード時の処理
 onMounted(() => {
-  // ESCキーでモーダルを閉じるなどの処理があれば
+  // 効果音の初期化
+  initSounds();
 });
 </script>
 
@@ -684,6 +1036,166 @@ onMounted(() => {
 
 .restart-btn:hover {
   background-color: #e0e0e0;
+}
+
+/* Swiperカードのスタイル */
+.card-swiper {
+  width: 100%;
+  height: 400px;
+  position: relative;
+  z-index: 1;
+}
+
+:deep(.swiper-slide) {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 20px;
+  font-size: 22px;
+  font-weight: bold;
+  color: #333;
+  background-color: white;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+:deep(.swiper-slide-shadow-left),
+:deep(.swiper-slide-shadow-right) {
+  border-radius: 20px;
+}
+
+:deep(.swiper-cards) {
+  overflow: visible;
+}
+.card-container {
+  position: relative;
+  margin-bottom: 30px;
+  height: 450px;
+}
+
+.simple-card {
+  width: 100%;
+  height: 400px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.swipe-indicators {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+  color: #999;
+  font-size: 0.9rem;
+}
+
+.swipe-left, .swipe-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.indicator-icon {
+  font-size: 1.2rem;
+}
+
+.manual-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin-top: 20px;
+  margin-bottom: 30px;
+}
+
+.btn-icon {
+  margin-right: 5px;
+}
+
+/* エフェクト */
+.know-effect, .dont-know-effect, .rare-effect {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+  pointer-events: none;
+  background-color: rgba(255, 255, 255, 0.5);
+}
+
+.effect-content, .rare-content {
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 30px;
+  border-radius: 20px;
+  text-align: center;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  max-width: 80%;
+}
+
+.effect-stamp {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #ff6b9d;
+  margin-bottom: 15px;
+}
+
+.effect-comment {
+  font-size: 1.2rem;
+  color: #666;
+}
+
+.effect-trivia {
+  margin-bottom: 20px;
+}
+
+.effect-trivia h3 {
+  font-size: 1.5rem;
+  color: #ff6b9d;
+  margin-bottom: 10px;
+}
+
+.effect-trivia p {
+  font-size: 1.1rem;
+  color: #666;
+  line-height: 1.5;
+}
+
+.effect-action {
+  margin-top: 20px;
+}
+
+.add-to-checklist-btn {
+  background-color: #ff6b9d;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 50px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto;
+  pointer-events: auto;
+}
+
+.rare-title {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #ffaa00;
+  margin-bottom: 15px;
+}
+
+.rare-message {
+  font-size: 1.2rem;
+  color: #666;
 }
 
 /* レスポンシブ対応 */
